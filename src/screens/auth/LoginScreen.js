@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
+  Alert,
 } from 'react-native';
 import colors from '../../theme/colors';
 import AppButton from '../../components/common/AppButton';
@@ -28,6 +29,7 @@ const LoginScreen = ({ navigation }) => {
   });
 
   const showAlert = (title, message, type = 'error') => {
+    Alert.alert(title, message);
     setAlertConfig({ title, message, type });
     setAlertVisible(true);
   };

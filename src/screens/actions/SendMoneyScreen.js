@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTransactions } from '../../context/TransactionContext';
 import PinModal from '../../components/common/PinModal';
+import { useSecurity } from '../../hooks/useSecurity';
 
 export default function SendMoneyScreen({ navigation, route }) {
   const mode = route?.params?.mode || 'Send Money';
@@ -19,6 +20,7 @@ export default function SendMoneyScreen({ navigation, route }) {
 
   const transactionContext = useTransactions() || {};
   const { balance = 0, addTransaction, isUserBlocked, currentUser } = transactionContext;
+  const { verifyAndAuthorize, logMpinEvent, logTransactionSuccess } = useSecurity();
 
   const [amount, setAmount] = useState('5000');
   const [selectedRecipient, setSelectedRecipient] = useState('Jamal Khan');
@@ -40,25 +42,19 @@ export default function SendMoneyScreen({ navigation, route }) {
   };
 
   const handleProceedClick = () => {
-    // 1. Admin Block Check
-    if (typeof isUserBlocked === 'function' && isUserBlocked(currentUser?.email)) {
-      showAlert(
-        'Account Suspended 🚫',
-        `Your account has been restricted by administrator. ${mode} operations are disabled.`,
-        'error'
-      );
-      return;
-    }
-
     const numericAmount = parseFloat(String(amount).replace(/,/g, ''));
+    const recipientName = isAddMoney ? 'Wallet Deposit' : selectedRecipient;
 
-    if (!numericAmount || isNaN(numericAmount) || numericAmount <= 0) {
-      showAlert('Validation Error', 'Please enter a valid transfer amount.', 'error');
-      return;
-    }
+    // Enterprise Security Middleware & Validation Gate
+    const securityCheck = verifyAndAuthorize({
+      amount: numericAmount,
+      recipient: recipientName,
+      userBalance: isAddMoney ? undefined : balance, // Deposit has no balance cap check
+      actionType: isAddMoney ? 'WALLET_DEPOSIT_ATTEMPT' : 'SEND_MONEY_ATTEMPT',
+    });
 
-    if (!isAddMoney && numericAmount > balance) {
-      showAlert('Insufficient Funds', `Your balance (Rs. ${balance.toLocaleString()}) is insufficient.`, 'error');
+    if (!securityCheck.allowed) {
+      showAlert('Security Check Failed ⚠️', securityCheck.message, 'error');
       return;
     }
 
@@ -68,6 +64,13 @@ export default function SendMoneyScreen({ navigation, route }) {
 
   const handlePinSuccess = () => {
     setPinModalVisible(false);
+
+    // Record MPIN Verification Event in Audit Log
+    logMpinEvent('SUCCESS', {
+      action: mode,
+      recipient: isAddMoney ? 'Wallet Deposit' : selectedRecipient,
+      amount: parseFloat(String(amount).replace(/,/g, '')),
+    });
 
     const numericAmount = parseFloat(String(amount).replace(/,/g, ''));
 
@@ -84,13 +87,23 @@ export default function SendMoneyScreen({ navigation, route }) {
       addTransaction(newTx);
     }
 
+    const txId = `TXN-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    // Log Successful Transaction in Enterprise Audit Logger
+    logTransactionSuccess({
+      txId,
+      type: mode,
+      recipient: isAddMoney ? 'Wallet Deposit' : selectedRecipient,
+      amount: numericAmount,
+    });
+
     // Navigate to Success
     navigation.navigate('TransactionSuccess', {
       type: mode,
       recipient: isAddMoney ? 'Wallet Deposit' : selectedRecipient,
       amount: numericAmount,
       dateTime: new Date().toLocaleString(),
-      txId: `TXN-${Math.floor(100000 + Math.random() * 900000)}`,
+      txId,
     });
   };
 

@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTransactions } from '../../context/TransactionContext';
 import PinModal from '../../components/common/PinModal';
+import { useSecurity } from '../../hooks/useSecurity';
 
 const BILL_CATEGORIES = [
   { id: '1', title: 'Electricity', icon: '⚡' },
@@ -22,6 +23,8 @@ const BILL_CATEGORIES = [
 
 export default function PayBillsScreen({ navigation }) {
   const { balance = 245500, addTransaction, isUserBlocked, currentUser } = useTransactions() || {};
+  const { verifyAndAuthorize, logMpinEvent, logTransactionSuccess } = useSecurity();
+
   const [selectedCategory, setSelectedCategory] = useState('Electricity');
   const [consumerNum, setConsumerNum] = useState('');
   const [billAmount, setBillAmount] = useState('0');
@@ -49,30 +52,24 @@ export default function PayBillsScreen({ navigation }) {
   };
 
   const handlePayBillClick = () => {
-    // 1. Admin Block Check
-    if (typeof isUserBlocked === 'function' && isUserBlocked(currentUser?.email)) {
-      showAlert(
-        'Account Suspended 🚫',
-        'Your account has been restricted by the administrator. Bill payment operations are disabled.',
-        'error'
-      );
-      return;
-    }
-
+    const cleanConsumer = (consumerNum || '').trim();
     const numericAmount = parseFloat(billAmount);
 
-    if (!consumerNum || consumerNum.length < 6) {
-      showAlert('Invalid Consumer No.', 'Please enter a valid Consumer/Reference Number.', 'error');
+    if (!cleanConsumer || cleanConsumer.length < 6) {
+      showAlert('Invalid Consumer No.', 'Please enter a valid Consumer/Reference Number (min 6 digits).', 'error');
       return;
     }
 
-    if (!numericAmount || numericAmount <= 0) {
-      showAlert('Invalid Amount', 'Please enter a valid bill amount.', 'error');
-      return;
-    }
+    // Enterprise Security Middleware & Validation Gate
+    const securityCheck = verifyAndAuthorize({
+      amount: numericAmount,
+      recipient: `${selectedCategory} (${cleanConsumer})`,
+      userBalance: balance,
+      actionType: 'PAY_BILL_ATTEMPT',
+    });
 
-    if (numericAmount > balance) {
-      showAlert('Insufficient Funds', 'You do not have enough balance to pay this bill.', 'error');
+    if (!securityCheck.allowed) {
+      showAlert('Security Check Failed ⚠️', securityCheck.message, 'error');
       return;
     }
 
@@ -83,6 +80,15 @@ export default function PayBillsScreen({ navigation }) {
   const handlePinSuccess = () => {
     setPinModalVisible(false);
     const numericAmount = parseFloat(billAmount);
+    const cleanConsumer = (consumerNum || '').trim();
+
+    // Log MPIN Verification Event in Audit Log
+    logMpinEvent('SUCCESS', {
+      action: 'Bill Payment',
+      category: selectedCategory,
+      recipient: cleanConsumer,
+      amount: numericAmount,
+    });
 
     if (typeof addTransaction === 'function') {
       addTransaction({
@@ -95,9 +101,20 @@ export default function PayBillsScreen({ navigation }) {
       });
     }
 
+    const txId = `TXN-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    // Log Successful Transaction in Enterprise Audit Logger
+    logTransactionSuccess({
+      txId,
+      type: 'Bill Payment',
+      category: selectedCategory,
+      recipient: cleanConsumer,
+      amount: numericAmount,
+    });
+
     showAlert(
       'Payment Successful 🎉',
-      `${selectedCategory} bill of Rs. ${numericAmount.toLocaleString()} paid successfully!`,
+      `${selectedCategory} bill of Rs. ${numericAmount.toLocaleString()} paid successfully! (Ref: ${txId})`,
       'success',
       () => navigation.goBack()
     );

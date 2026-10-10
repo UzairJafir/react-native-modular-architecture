@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
+  Alert,
 } from 'react-native';
 import colors from '../../theme/colors';
 import AppButton from '../../components/common/AppButton';
@@ -31,6 +32,11 @@ const SignupScreen = ({ navigation }) => {
   });
 
   const showAlert = (title, message, type = 'error', onConfirm = null) => {
+    if (onConfirm) {
+      Alert.alert(title, message, [{ text: 'OK', onPress: onConfirm }]);
+    } else {
+      Alert.alert(title, message);
+    }
     setAlertConfig({ title, message, type, onConfirm });
     setAlertVisible(true);
   };
@@ -61,7 +67,7 @@ const SignupScreen = ({ navigation }) => {
     }
 
     if (password !== confirmPassword) {
-      showAlert('Password Mismatch', 'Passwords do not match. Please re-check.', 'error');
+      showAlert('Validation Error', 'Passwords do not match.', 'error');
       return;
     }
 
@@ -75,7 +81,7 @@ const SignupScreen = ({ navigation }) => {
 
     const message = `A 6-digit verification code has been sent to ${email.trim()}. Please verify your account.`;
 
-    showAlert('OTP Dispatched 📩', message, 'success', () => {
+    showAlert('OTP Sent', message, 'success', () => {
       navigation.navigate('OTP', {
         email: email.trim(),
         fullName: fullName.trim(),

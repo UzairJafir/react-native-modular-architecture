@@ -34,6 +34,7 @@ const OTPScreen = ({ route, navigation }) => {
     onConfirm: null,
   });
 
+  // Strictly Custom Modal Trigger (Removed Native Alert.alert)
   const showAlert = (title, message, type = 'error', onConfirm = null) => {
     setAlertConfig({ title, message, type, onConfirm });
     setAlertVisible(true);
@@ -67,7 +68,7 @@ const OTPScreen = ({ route, navigation }) => {
 
     setIsVerifying(true);
 
-    // 3. Success Sweet Alert & Navigate to Dashboard
+    // 3. Success Custom Alert & Direct Route to Dashboard
     showAlert(
       'Verification Successful! 🎉',
       'Welcome to Finflow! Your account has been verified successfully.',
@@ -133,7 +134,7 @@ const OTPScreen = ({ route, navigation }) => {
         </View>
       </ScrollView>
 
-      {/* Real-Time Sweet Alert Modal */}
+      {/* Clean Custom Sweet Alert Modal */}
       <Modal visible={alertVisible} transparent animationType="fade">
         <View style={styles.alertBackdrop}>
           <View style={styles.alertBox}>

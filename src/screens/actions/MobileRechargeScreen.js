@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTransactions } from '../../context/TransactionContext';
 import PinModal from '../../components/common/PinModal';
+import { useSecurity } from '../../hooks/useSecurity';
 
 const OPERATORS = [
   { id: '1', name: 'Jazz', color: '#DC2626' },
@@ -23,6 +24,7 @@ const OPERATORS = [
 export default function MobileRechargeScreen({ navigation }) {
   const transactionContext = useTransactions() || {};
   const { balance = 245500, addTransaction, isUserBlocked, currentUser } = transactionContext;
+  const { verifyAndAuthorize, logMpinEvent, logTransactionSuccess } = useSecurity();
 
   const [phoneNumber, setPhoneNumber] = useState('');
   const [selectedOperator, setSelectedOperator] = useState('Jazz');
@@ -51,30 +53,24 @@ export default function MobileRechargeScreen({ navigation }) {
   };
 
   const handleRechargeClick = () => {
-    // 1. Admin Block Check
-    if (typeof isUserBlocked === 'function' && isUserBlocked(currentUser?.email)) {
-      showAlert(
-        'Account Suspended 🚫',
-        'Your account has been restricted by the administrator. Recharge operations are disabled.',
-        'error'
-      );
-      return;
-    }
-
+    const cleanPhone = (phoneNumber || '').trim();
     const numericAmount = parseFloat(amount);
 
-    if (!phoneNumber || phoneNumber.length < 10) {
-      showAlert('Invalid Number', 'Please enter a valid mobile number.', 'error');
+    if (!cleanPhone || cleanPhone.length < 10) {
+      showAlert('Invalid Number', 'Please enter a valid mobile number (min 10 digits).', 'error');
       return;
     }
 
-    if (!numericAmount || numericAmount <= 0) {
-      showAlert('Invalid Amount', 'Please enter a valid recharge amount.', 'error');
-      return;
-    }
+    // Enterprise Security Middleware & Validation Gate
+    const securityCheck = verifyAndAuthorize({
+      amount: numericAmount,
+      recipient: `${selectedOperator}: ${cleanPhone}`,
+      userBalance: balance,
+      actionType: 'MOBILE_RECHARGE_ATTEMPT',
+    });
 
-    if (numericAmount > balance) {
-      showAlert('Insufficient Funds', 'You do not have enough balance for this recharge.', 'error');
+    if (!securityCheck.allowed) {
+      showAlert('Security Check Failed ⚠️', securityCheck.message, 'error');
       return;
     }
 
@@ -85,6 +81,15 @@ export default function MobileRechargeScreen({ navigation }) {
   const handlePinSuccess = () => {
     setPinModalVisible(false);
     const numericAmount = parseFloat(amount);
+    const cleanPhone = (phoneNumber || '').trim();
+
+    // Log MPIN Verification Event in Audit Log
+    logMpinEvent('SUCCESS', {
+      action: 'Mobile Recharge',
+      operator: selectedOperator,
+      recipient: cleanPhone,
+      amount: numericAmount,
+    });
 
     if (typeof addTransaction === 'function') {
       addTransaction({
@@ -97,9 +102,20 @@ export default function MobileRechargeScreen({ navigation }) {
       });
     }
 
+    const txId = `TXN-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    // Log Successful Transaction in Enterprise Audit Logger
+    logTransactionSuccess({
+      txId,
+      type: 'Mobile Recharge',
+      operator: selectedOperator,
+      recipient: cleanPhone,
+      amount: numericAmount,
+    });
+
     showAlert(
       'Recharge Successful 🎉',
-      `${selectedOperator} Recharge of Rs. ${numericAmount.toLocaleString()} completed for ${phoneNumber}.`,
+      `${selectedOperator} Recharge of Rs. ${numericAmount.toLocaleString()} completed for ${cleanPhone}. (Ref: ${txId})`,
       'success',
       () => navigation.goBack()
     );
